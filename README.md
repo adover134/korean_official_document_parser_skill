@@ -4,6 +4,10 @@
 Markdown으로 변환하는 [Claude Code Skill](https://docs.claude.com/)이다. 한국 공공기관 입찰공고문
 42건을 대상으로 검증했다.
 
+> [Claude Code](https://claude.com/claude-code)와 함께 설계·구현했다. 아키텍처 결정(2-pass 분리,
+> 결정론적 안전망 규칙 등)은 실제 실패 사례를 근거로 세션 중 반복적으로 검증·수정한 것이다 — 그
+> 과정은 [`docs/DESIGN_PROCESS.md`](docs/DESIGN_PROCESS.md)에 정리했다.
+
 ## 문제
 
 HWP→Markdown 변환 라이브러리(예: [`kordoc`](https://www.npmjs.com/package/kordoc))는 표·서식·
