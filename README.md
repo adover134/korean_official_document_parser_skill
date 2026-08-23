@@ -31,7 +31,8 @@ HWP/HWPX
 [Pass1a] 헤더일 수 있는 줄 후보 추출                          (규칙 기반, recall 우선)
    │        볼드 단독 줄 / 번호 매김 줄 / 괄호 마커(【】·[]·〈〉 등) / kordoc 네이티브 헤딩
    ▼
-[Pass1b] 후보 목록을 로컬 LLM(Ollama)에 통째로 전달           (LLM, 판단만)
+[Pass1b] 후보 목록을 LLM에 통째로 전달                        (LLM, 판단만)
+   │        기본: 로컬 Ollama / --backend로 OpenAI 호환 API(OpenAI·Groq·Gemini)도 가능
    │        main_section / sub_section / attachment_section / not_heading 중 하나로 분류
    ▼
 [안전망] 결정론적 후처리                                       (LLM 아님, 규칙)

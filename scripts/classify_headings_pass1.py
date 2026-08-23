@@ -20,10 +20,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import time
-import urllib.request
 
 from extract_heading_candidates import _match_bracket_marker
+from llm_backend import LLMBackend, OllamaBackend
 
 SYSTEM_PROMPT = """당신은 한국 공공기관 입찰공고문(RFP)의 구조를 분석하는 전문가입니다.
 
@@ -68,40 +67,20 @@ def build_user_prompt(candidates: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def classify(candidates: list[dict], model: str, host: str = "http://localhost:11434") -> list[dict]:
+def classify(candidates: list[dict], backend: LLMBackend) -> list[dict]:
+    """`backend`(Ollama든 OpenAI 호환이든, `llm_backend.LLMBackend` 계약을 따르는 아무 백엔드)에
+    후보 목록을 보내 분류 결과를 받는다.
+
     # 후보 목록이 "작다"는 설계 전제(모듈 docstring 참고)는 후보가 많은 대형 문서(체크리스트/표가
-    # 많은 문서)에서 깨진다 — 고정 num_predict=4000으로는 후보 92개짜리 문서에서 JSON 응답이
+    # 많은 문서)에서 깨진다 — 고정 max_tokens=4000으로는 후보 92개짜리 문서에서 JSON 응답이
     # 중간에 잘려(Unterminated string) 파싱이 실패하는 걸 실제로 확인함(후보 92개짜리 샘플 문서
     # 3건). 후보 개수에 비례해 예산을 늘린다 — 후보가 적은 기존 샘플들(10~22개)에는
-    # 영향 없음(원래도 예산 안에서 끝났으므로).
+    # 영향 없음(원래도 예산 안에서 끝났으므로)."""
     n = len(candidates)
-    num_predict = min(16000, max(4000, n * 120 + 500))
-    num_ctx = min(32768, max(8192, num_predict + n * 60 + 2000))
-    req = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(candidates)},
-        ],
-        "stream": False,
-        "think": False,
-        "format": "json",
-        "options": {"temperature": 0, "seed": 42, "num_predict": num_predict, "num_ctx": num_ctx},
-    }
-    data = json.dumps(req).encode("utf-8")
-    r = urllib.request.Request(f"{host}/api/chat", data=data, headers={"Content-Type": "application/json"})
-    t0 = time.time()
-    with urllib.request.urlopen(r, timeout=300) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
-    dt = time.time() - t0
-
-    content = body["message"]["content"]
-    parsed = json.loads(content)
+    max_tokens = min(16000, max(4000, n * 120 + 500))
+    parsed = backend.chat_json(SYSTEM_PROMPT, build_user_prompt(candidates), max_tokens=max_tokens, seed=42)
     result = parsed.get("classifications", [])
-    print(
-        f"완료 ({dt:.1f}s) prompt_eval={body.get('prompt_eval_count')} "
-        f"eval={body.get('eval_count')} classifications={len(result)}/{len(candidates)}"
-    )
+    print(f"classifications={len(result)}/{len(candidates)}")
     return result
 
 
@@ -219,21 +198,36 @@ def _cap_bracket_marker_scopes(merged: list[dict]) -> list[dict]:
     return merged
 
 
-def classify_and_merge(candidates: list[dict], model: str, host: str = "http://localhost:11434") -> list[dict]:
+def classify_and_merge(
+    candidates: list[dict],
+    model: str | None = None,
+    host: str = "http://localhost:11434",
+    backend: LLMBackend | None = None,
+) -> list[dict]:
     """후보를 분류하고 원본 후보 필드에 계층 분류 결과를 병합해 반환 (run_pipeline.py에서도 재사용).
+
+    `backend`를 안 주면 기존과 동일하게 `model`/`host`로 `OllamaBackend`를 만들어 쓴다(하위 호환).
+    `backend`를 직접 주면(예: `OpenAICompatBackend`) `model`/`host`는 무시되고 그 백엔드로 호출한다
+    — Ollama가 없는 환경(예: GPU 없는 서버)에서도 같은 분류 로직을 쓸 수 있게 하는 확장점(자세한
+    배경은 `llm_backend.py` 참고).
 
     "OO 귀하" 같은 수신자 살루테이션은 어떤 문서에서도 섹션 제목이 될 수 없는데, 후보가 많은
     대형 문서(후보 92개짜리 샘플 문서)에서 LLM이 같은 텍스트를 4곳 중 1곳만
     attachment_section으로 잘못 분류하는 간헐적 오류를 실제로 확인함 — 결정론적으로 강제 보정."""
+    if backend is None:
+        if model is None:
+            raise ValueError("backend를 안 주면 model이 필요합니다 (OllamaBackend 생성용)")
+        backend = OllamaBackend(model, host)
+
     is_top_level = len(candidates) <= _MAX_CANDIDATES_PER_CALL
 
     if not is_top_level:
         merged: list[dict] = []
         for i in range(0, len(candidates), _MAX_CANDIDATES_PER_CALL):
-            merged.extend(classify_and_merge(candidates[i : i + _MAX_CANDIDATES_PER_CALL], model, host))
+            merged.extend(classify_and_merge(candidates[i : i + _MAX_CANDIDATES_PER_CALL], backend=backend))
         return _cap_bracket_marker_scopes(_fill_main_section_number_gaps(merged))
 
-    classifications = classify(candidates, model, host)
+    classifications = classify(candidates, backend)
     by_line = {_line_key(c.get("line")): c for c in classifications}
     merged = []
     for cand in candidates:

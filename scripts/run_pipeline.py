@@ -32,6 +32,11 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
     python run_pipeline.py <input.hwp|hwpx|pdf> [--pipeline-root pipeline]
         [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.9.0]
         [--title TITLE] [-o OUTPUT] [--skip-existing-stage1]
+        [--backend ollama|openai|groq|gemini] [--api-key KEY] [--base-url URL]
+
+Pass1b(헤더 계층 판단) LLM 호출은 기본이 로컬 Ollama지만, --backend로 OpenAI 호환 API(OpenAI/
+Groq/Gemini)로 바꿀 수 있다(자세한 배경은 llm_backend.py 참고) — GPU 없는 환경에서도 쓸 수 있게
+하는 확장점.
 """
 
 from __future__ import annotations
@@ -47,8 +52,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from classify_headings_pass1 import classify_and_merge  # noqa: E402
 from extract_heading_candidates import extract_candidates  # noqa: E402
 from fix_bullet_punctuation import fix_bullet_punctuation, find_issues as find_bullet_issues  # noqa: E402
+from llm_backend import LLMBackend, OpenAICompatBackend  # noqa: E402
 from pass2_window_reformat import derive_title_from_filename, render_markdown  # noqa: E402
 from render_from_kordoc_json import render as render_stage1_from_json  # noqa: E402
+
+_DEFAULT_BASE_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+}
+_API_KEY_ENV_VARS = {"openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY", "gemini": "GEMINI_API_KEY"}
 
 STAGE1_DIR = "01-stage1-kordoc"
 PASS1_DIR = "02-pass1-heading-candidates-kordoc"
@@ -76,14 +89,22 @@ def run_stage1(input_path: Path, out_md: Path, kordoc_version: str) -> str:
 
 
 def run_pass1(
-    stage1_text: str, source_name: str, out_json: Path | None, model: str, host: str
+    stage1_text: str,
+    source_name: str,
+    out_json: Path | None,
+    model: str | None = None,
+    host: str = "http://localhost:11434",
+    backend: LLMBackend | None = None,
 ) -> list[dict]:
-    """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장."""
+    """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장.
+
+    `backend`를 주면 Ollama 대신 그 백엔드(예: OpenAI 호환 API)로 분류한다 —
+    `classify_headings_pass1.classify_and_merge()`/`llm_backend.py` 참고."""
     candidates = extract_candidates(stage1_text)
     if not candidates:
         return []
 
-    merged = classify_and_merge(candidates, model, host)
+    merged = classify_and_merge(candidates, model, host, backend=backend)
 
     counts: dict[str, int] = {}
     for m in merged:
@@ -110,12 +131,47 @@ def run_pass2(stage1_text: str, classified: list[dict], title: str) -> str:
     return final
 
 
+def _build_backend(args: argparse.Namespace) -> LLMBackend | None:
+    """--backend 선택에 따라 LLMBackend 인스턴스를 만든다. ollama(기본)면 None을 반환해서
+    run_pass1/classify_and_merge이 기존처럼 model/host로 OllamaBackend를 알아서 만들게 둔다."""
+    if args.backend == "ollama":
+        return None
+    api_key = args.api_key or os.environ.get(_API_KEY_ENV_VARS.get(args.backend, ""))
+    if not api_key:
+        env_name = _API_KEY_ENV_VARS.get(args.backend, "?")
+        raise SystemExit(f"--backend {args.backend}는 --api-key 또는 환경변수 {env_name}가 필요합니다.")
+    base_url = args.base_url or _DEFAULT_BASE_URLS.get(args.backend)
+    if not base_url:
+        raise SystemExit(f"--backend {args.backend}는 --base-url을 직접 지정해야 합니다.")
+    return OpenAICompatBackend(model=args.model, api_key=api_key, base_url=base_url)
+
+
+def _load_dotenv_if_present() -> None:
+    """cwd에 .env가 있으면 로드(예: GROQ_API_KEY). python-dotenv 없으면 조용히 건너뜀 —
+    --api-key로 직접 줘도 되므로 필수 의존성으로 만들지 않는다."""
+    if not Path(".env").exists():
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
+
 def main() -> None:
+    _load_dotenv_if_present()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", help="입력 HWP/HWPX/PDF 파일 경로")
     ap.add_argument("--pipeline-root", default="pipeline", help="Stage1/Pass1/Pass2 출력 루트 (기본: pipeline/)")
-    ap.add_argument("--model", default="qwen3.5:9b")
-    ap.add_argument("--host", default="http://localhost:11434")
+    ap.add_argument("--model", default="qwen3.5:9b", help="ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명")
+    ap.add_argument("--host", default="http://localhost:11434", help="--backend ollama일 때만 사용")
+    ap.add_argument(
+        "--backend", choices=["ollama", "openai", "groq", "gemini"], default="ollama",
+        help="Pass1b(헤더 계층 판단) LLM 호출 방식. ollama(기본, 로컬) 외에는 --api-key 필요",
+    )
+    ap.add_argument("--api-key", help="--backend가 ollama가 아닐 때 필요한 API 키 (또는 OPENAI_API_KEY/GROQ_API_KEY/GEMINI_API_KEY 환경변수)")
+    ap.add_argument("--base-url", help="OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)")
     ap.add_argument("--kordoc-version", default="4.9.0")
     ap.add_argument("--title", help="문서 제목 (미지정 시 파일명에서 유도)")
     ap.add_argument("-o", "--output", help="최종 결과 저장 경로 (미지정 시 pipeline-root/03-.../<파일명>.md)")
@@ -129,6 +185,8 @@ def main() -> None:
     input_path = Path(args.input)
     if not input_path.exists():
         raise SystemExit(f"입력 파일을 찾을 수 없음: {input_path}")
+
+    backend = _build_backend(args)
 
     base = input_path.name
     root = Path(args.pipeline_root)
@@ -145,7 +203,7 @@ def main() -> None:
         print(f"      완료 ({len(stage1_text)}자)")
 
     print(f"[2/3] Pass1 (후보 추출 + LLM 계층 분류) -> {pass1_path}")
-    classified = run_pass1(stage1_text, str(stage1_path), pass1_path, args.model, args.host)
+    classified = run_pass1(stage1_text, str(stage1_path), pass1_path, args.model, args.host, backend=backend)
     if not classified:
         print("      경고: 제목 후보 0개 — 구조 분류 없이 Stage1 결과를 그대로 사용합니다")
 

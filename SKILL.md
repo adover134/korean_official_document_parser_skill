@@ -1,6 +1,6 @@
 ---
 name: hwp-hierarchical-md
-description: Converts hierarchical Korean official documents in HWP/HWPX format (government RFPs, bid announcements, contracts, notices) into structurally faithful Markdown — preserving heading levels, tables, and attachment/exhibit boundaries. Use when the user asks to convert a .hwp or .hwpx file to Markdown, especially when the document has a numbered section hierarchy (1./2./3. main sections, sub-items, 붙임/별첨/서식 attachments) that a plain converter would flatten. Requires Node.js (npx) and a local Ollama server with a pulled model.
+description: Converts hierarchical Korean official documents in HWP/HWPX format (government RFPs, bid announcements, contracts, notices) into structurally faithful Markdown — preserving heading levels, tables, and attachment/exhibit boundaries. Use when the user asks to convert a .hwp or .hwpx file to Markdown, especially when the document has a numbered section hierarchy (1./2./3. main sections, sub-items, 붙임/별첨/서식 attachments) that a plain converter would flatten. Requires Node.js (npx); the heading-judgment LLM call defaults to a local Ollama server with a pulled model, or can use an OpenAI-compatible cloud API (OpenAI/Groq/Gemini) via --backend instead.
 ---
 
 # HWP 계층 구조 Markdown 변환기
@@ -42,9 +42,13 @@ LLM 호출은 오직 "이 후보가 헤더인가?"라는 좁은 판단에만 쓰
 ## 요구사항
 
 - Node.js (`npx`로 `kordoc`을 실행 — 별도 설치 불필요, 최초 실행 시 자동 다운로드)
-- 로컬에서 실행 중인 [Ollama](https://ollama.com) 서버 + 풀받은 모델(기본값 `qwen3.5:9b`,
-  `--model`로 변경 가능)
-- Python 3.10+ (표준 라이브러리만 사용, pip 설치 불필요)
+- Pass1b(헤더 계층 판단) LLM 호출 — 아래 둘 중 하나:
+  - 로컬에서 실행 중인 [Ollama](https://ollama.com) 서버 + 풀받은 모델(기본값 `qwen3.5:9b`,
+    `--model`로 변경 가능) — 기본값, GPU 필요
+  - OpenAI 호환 클라우드 API(OpenAI/Groq/Gemini) — `--backend`로 선택, API 키 필요. GPU 없이도
+    쓸 수 있고, Groq는 무료 티어로도 동작 확인함(`scripts/llm_backend.py` 참고)
+- Python 3.10+ (표준 라이브러리만 사용, pip 설치 불필요 — `.env` 자동 로드는 `python-dotenv`가
+  있으면 쓰고 없으면 조용히 건너뜀)
 
 ## 사용법
 
@@ -54,14 +58,18 @@ python scripts/run_pipeline.py <입력.hwp|hwpx> [옵션]
 
 주요 옵션:
 - `--pipeline-root DIR` — Stage1/Pass1/Pass2 중간 산출물 저장 위치 (기본: `pipeline/`)
-- `--model NAME` — Ollama 모델명 (기본: `qwen3.5:9b`)
-- `--host URL` — Ollama 서버 주소 (기본: `http://localhost:11434`)
+- `--model NAME` — Ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명 (기본: `qwen3.5:9b`)
+- `--host URL` — Ollama 서버 주소 (기본: `http://localhost:11434`, `--backend ollama`일 때만 사용)
+- `--backend {ollama,openai,groq,gemini}` — Pass1b LLM 호출 방식 (기본: `ollama`)
+- `--api-key KEY` — `--backend`가 ollama가 아닐 때 필요 (또는 `OPENAI_API_KEY`/`GROQ_API_KEY`/
+  `GEMINI_API_KEY` 환경변수, 또는 cwd의 `.env`)
+- `--base-url URL` — OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)
 - `-o, --output PATH` — 최종 Markdown 저장 경로
 - `--skip-existing-stage1` — 이미 Stage1 결과가 있으면 kordoc 재실행 없이 재사용
 
 Claude가 이 스킬을 트리거하는 경우, 사용자가 지정한 `.hwp`/`.hwpx` 파일 경로를 `run_pipeline.py`에
-그대로 전달하고, 결과 Markdown 경로를 사용자에게 보고한다. Ollama가 꺼져 있거나 대상 모델이 없으면
-`ollama serve` 및 `ollama pull <model>` 안내를 먼저 제공한다.
+그대로 전달하고, 결과 Markdown 경로를 사용자에게 보고한다. `--backend ollama`(기본)인데 Ollama가
+꺼져 있거나 대상 모델이 없으면 `ollama serve` 및 `ollama pull <model>` 안내를 먼저 제공한다.
 
 ## 한계
 
