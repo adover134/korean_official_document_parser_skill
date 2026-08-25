@@ -118,8 +118,7 @@ def _cells_to_grid(rows: list[tuple[bool, list[dict]]]) -> tuple[list[list[str]]
     grid: list[list[str]] = []
     # carry[col] = (남은 행 수, 값) — 이전 행의 rowspan이 이 칸을 계속 채우는 중
     carry: dict[int, list] = {}
-    has_header = any(is_th for is_th, _ in rows)
-    header_row_index = next((i for i, (is_th, _) in enumerate(rows) if is_th), None)
+    is_th_flags = [is_th for is_th, _ in rows]
 
     for row_cells in rows:
         _, cells = row_cells
@@ -158,7 +157,32 @@ def _cells_to_grid(rows: list[tuple[bool, list[dict]]]) -> tuple[list[list[str]]
         while len(r) < max_cols:
             r.append("")
 
-    return grid, has_header, header_row_index
+    # 표 맨 앞에 <th> 행이 연속으로 여러 개 오면(대분류+소분류 2단 헤더 등) GFM
+    # pipe-table은 헤더가 한 행뿐이라 첫 번째만 헤더로 쓰고 두 번째 이후는 데이터로
+    # 떨어진다 — 다운스트림 평탄화 단계에서 그 값이 자기 컬럼 헤더와 똑같은 문자열로
+    # "에코"돼 나온다(실측: 장성경찰서 표에서 "공사예정금액(A=B+E): 공사예정금액(A=B+E)"
+    # 같은 노이즈 발생). 연속된 헤더 행을 컬럼별로 하나로 합쳐 헤더 행 자체를 줄인다.
+    header_run = 0
+    while header_run < len(is_th_flags) and is_th_flags[header_run]:
+        header_run += 1
+
+    if header_run == 0:
+        return grid, False, None
+    if header_run == 1:
+        return grid, True, 0
+
+    merged_header: list[str] = []
+    for col in range(max_cols):
+        seen: set[str] = set()
+        parts: list[str] = []
+        for r in range(header_run):
+            value = grid[r][col].strip()
+            if value and value not in seen:
+                parts.append(value)
+                seen.add(value)
+        merged_header.append(" ".join(parts))
+    merged_grid = [merged_header, *grid[header_run:]]
+    return merged_grid, True, 0
 
 
 def _json_rows_to_grid(rows_cells: list[list[dict]]) -> list[list[str]]:
@@ -231,17 +255,31 @@ def json_table_to_pipe(cells_2d: list[list[dict]], has_header: bool) -> str:
         return ""
 
     out_parts: list[str] = []
+    seen_table_segment = False
     for kind, payload in segments:
         if kind == "text":
             out_parts.append(str(payload))
         else:
             sub_grid = _json_rows_to_grid([cells for _, cells in payload])
-            sub_header_idx = 0
-            for local_i, (orig_i, _) in enumerate(payload):
-                if orig_i == header_row_index:
-                    sub_header_idx = local_i
-                    break
-            out_parts.append("\n".join(_grid_to_pipe_lines(sub_grid, sub_header_idx)))
+            # 이 세그먼트에 실제 헤더 행이 포함돼 있을 때만 인덱스를 채운다 — 기존엔
+            # has_header=False(header_row_index=None)일 때도 매치가 안 되면 기본값
+            # 0이 그대로 남아, HTML 경로와 같은 "헤더 없는 표의 첫 행이 헤더로 찍힘"
+            # 버그가 JSON 경로에도 똑같이 있었다.
+            sub_header_idx = None
+            if header_row_index is not None:
+                for local_i, (orig_i, _) in enumerate(payload):
+                    if orig_i == header_row_index:
+                        sub_header_idx = local_i
+                        break
+                if sub_header_idx is None and not seen_table_segment:
+                    # kordoc JSON의 hasHeader는 표 전체에 대한 단일 플래그라 원본
+                    # 헤더 행이 정확히 몇 번째였는지는 모른다(관례상 index 0으로 가정).
+                    # 그 앞에 경계 행(배너)이 있어서 딱 맞는 매치가 안 나오면, 첫
+                    # 번째 진짜 표 세그먼트의 첫 행을 헤더로 본다 — 배너 분리 이전
+                    # 코드의 동작과 동일한 가정.
+                    sub_header_idx = 0
+            seen_table_segment = True
+            out_parts.append("\n".join(_render_grid(sub_grid, sub_header_idx)))
     return "\n\n".join(out_parts)
 
 
@@ -260,6 +298,42 @@ def _grid_to_pipe_lines(grid: list[list[str]], header_row_index: int | None) -> 
     for row in body_rows:
         lines.append("| " + " | ".join(_escape(c) for c in row) + " |")
     return lines
+
+
+def _render_headerless_rows(grid: list[list[str]]) -> list[str]:
+    """실제 <th> 헤더가 없는 표를 GFM pipe-table로 만들지 않고 곧바로
+    `label: value` 텍스트 줄로 렌더링한다.
+
+    원본 HWP 표가 애초에 헤더 없이 "라벨: 값"만 나열하는 표라도, GFM pipe-table
+    문법은 헤더+구분선 행을 강제한다. 이걸 지키려고 첫 데이터 행을 헤더 자리에
+    억지로 찍으면, 이후 파이프라인(RAG용 평탄화 단계)이 "이게 진짜 헤더인지 아니면
+    첫 데이터 행이 헤더 자리에 찍힌 것인지"를 텍스트 패턴만 보고 휴리스틱으로 추측해야
+    한다. 여기서는 원본 HTML에 실제 <th>가 있었는지 이미 알고 있으므로, 없다면 애초에
+    표 형태로 안 만들고 바로 평탄화된 텍스트로 낸다 — 다운스트림이 추측할 필요가 없다.
+
+    같은 행의 비어있지 않은 칸들을 왼쪽부터 순서대로 (라벨, 값) 쌍으로 묶는다 —
+    컬럼 인덱스 고정 대신 이렇게 하는 이유는 병합 셀 복원으로 값 칸이 한 칸 밀려
+    중간에 빈 칸이 끼는 경우를 그대로 흡수하기 위함이다."""
+    lines: list[str] = []
+    for row in grid:
+        non_empty = [v for v in row if v]
+        if not non_empty:
+            continue
+        pairs: list[str] = []
+        it = iter(non_empty)
+        for label in it:
+            value = next(it, None)
+            pairs.append(f"{label}: {value}" if value is not None else label)
+        lines.append(", ".join(pairs))
+    return lines
+
+
+def _render_grid(grid: list[list[str]], header_row_index: int | None) -> list[str]:
+    """그리드 하나를 렌더링한다 — 진짜 헤더가 있으면 GFM pipe-table, 없으면
+    `_render_headerless_rows()`로 바로 텍스트."""
+    if header_row_index is not None:
+        return _grid_to_pipe_lines(grid, header_row_index)
+    return _render_headerless_rows(grid)
 
 
 def _row_non_empty_texts(cells: list[dict]) -> list[str]:
@@ -309,7 +383,7 @@ def rows_to_pipe(rows: list[tuple[bool, list[dict]]]) -> str:
         else:
             grid, _has_header, header_idx = _cells_to_grid(payload)  # type: ignore[arg-type]
             if grid:
-                out_parts.append("\n".join(_grid_to_pipe_lines(grid, header_idx)))
+                out_parts.append("\n".join(_render_grid(grid, header_idx)))
     return "\n\n".join(out_parts)
 
 
