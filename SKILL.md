@@ -64,6 +64,8 @@ python scripts/run_pipeline.py <입력.hwp|hwpx> [옵션]
 - `--api-key KEY` — `--backend`가 ollama가 아닐 때 필요 (또는 `OPENAI_API_KEY`/`GROQ_API_KEY`/
   `GEMINI_API_KEY` 환경변수, 또는 cwd의 `.env`)
 - `--base-url URL` — OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)
+- `--max-candidates-per-call N` — Pass1b LLM 호출 하나당 넘길 헤더 후보 최대 개수 (기본: Ollama
+  VRAM 기준 70). Groq 등 TPM 한도가 낮은 백엔드는 이 값을 낮춰야 할 수 있음 — 아래 "한계" 참고
 - `-o, --output PATH` — 최종 Markdown 저장 경로
 - `--skip-existing-stage1` — 이미 Stage1 결과가 있으면 kordoc 재실행 없이 재사용
 
@@ -74,7 +76,7 @@ Claude가 이 스킬을 트리거하는 경우, 사용자가 지정한 `.hwp`/`.
 ## 한계
 
 - 8GB급 VRAM 환경에서는 문서당 후보가 많을 경우(체크리스트/표가 많은 문서) 자동으로 70개 단위로
-  분할 호출한다 — 컨텍스트 제한이 다른 환경이면 `classify_headings_pass1.py`의
-  `_MAX_CANDIDATES_PER_CALL`을 조정.
+  분할 호출한다 — 컨텍스트 제한이 다른 환경(또는 Groq처럼 TPM 한도가 낮은 클라우드 백엔드)이면
+  소스 수정 없이 `--max-candidates-per-call`로 조정.
 - 결정론적 안전망은 실제로 관찰된 실패 패턴(한국 정부/공공기관 입찰공고문 corpus 기준)에서 도출된
   것이라, 완전히 다른 장르의 문서에서는 재조정이 필요할 수 있다.

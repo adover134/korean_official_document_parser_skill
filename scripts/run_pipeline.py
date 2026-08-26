@@ -33,6 +33,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
         [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.9.0]
         [--title TITLE] [-o OUTPUT] [--skip-existing-stage1]
         [--backend ollama|openai|groq|gemini] [--api-key KEY] [--base-url URL]
+        [--max-candidates-per-call N]
 
 Pass1b(헤더 계층 판단) LLM 호출은 기본이 로컬 Ollama지만, --backend로 OpenAI 호환 API(OpenAI/
 Groq/Gemini)로 바꿀 수 있다(자세한 배경은 llm_backend.py 참고) — GPU 없는 환경에서도 쓸 수 있게
@@ -95,16 +96,19 @@ def run_pass1(
     model: str | None = None,
     host: str = "http://localhost:11434",
     backend: LLMBackend | None = None,
+    max_candidates_per_call: int | None = None,
 ) -> list[dict]:
     """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장.
 
     `backend`를 주면 Ollama 대신 그 백엔드(예: OpenAI 호환 API)로 분류한다 —
-    `classify_headings_pass1.classify_and_merge()`/`llm_backend.py` 참고."""
+    `classify_headings_pass1.classify_and_merge()`/`llm_backend.py` 참고. `max_candidates_per_call`은
+    그 함수의 같은 이름 인자로 그대로 전달되며, 미지정 시
+    `classify_headings_pass1._MAX_CANDIDATES_PER_CALL`(Ollama VRAM 기준 기본값)을 쓴다."""
     candidates = extract_candidates(stage1_text)
     if not candidates:
         return []
 
-    merged = classify_and_merge(candidates, model, host, backend=backend)
+    merged = classify_and_merge(candidates, model, host, backend=backend, max_candidates_per_call=max_candidates_per_call)
 
     counts: dict[str, int] = {}
     for m in merged:
@@ -172,6 +176,13 @@ def main() -> None:
     )
     ap.add_argument("--api-key", help="--backend가 ollama가 아닐 때 필요한 API 키 (또는 OPENAI_API_KEY/GROQ_API_KEY/GEMINI_API_KEY 환경변수)")
     ap.add_argument("--base-url", help="OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)")
+    ap.add_argument(
+        "--max-candidates-per-call", type=int, default=None,
+        help=(
+            "Pass1 LLM 호출 하나당 넘길 헤더 후보 최대 개수 (미지정 시 Ollama VRAM 기준 기본값 사용). "
+            "Groq 등 TPM 한도가 낮은 클라우드 백엔드로 --backend를 바꿨을 때 이 값을 낮춰야 할 수 있음"
+        ),
+    )
     ap.add_argument("--kordoc-version", default="4.9.0")
     ap.add_argument("--title", help="문서 제목 (미지정 시 파일명에서 유도)")
     ap.add_argument("-o", "--output", help="최종 결과 저장 경로 (미지정 시 pipeline-root/03-.../<파일명>.md)")
@@ -203,7 +214,10 @@ def main() -> None:
         print(f"      완료 ({len(stage1_text)}자)")
 
     print(f"[2/3] Pass1 (후보 추출 + LLM 계층 분류) -> {pass1_path}")
-    classified = run_pass1(stage1_text, str(stage1_path), pass1_path, args.model, args.host, backend=backend)
+    classified = run_pass1(
+        stage1_text, str(stage1_path), pass1_path, args.model, args.host, backend=backend,
+        max_candidates_per_call=args.max_candidates_per_call,
+    )
     if not classified:
         print("      경고: 제목 후보 0개 — 구조 분류 없이 Stage1 결과를 그대로 사용합니다")
 

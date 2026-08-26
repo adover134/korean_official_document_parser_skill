@@ -203,6 +203,7 @@ def classify_and_merge(
     model: str | None = None,
     host: str = "http://localhost:11434",
     backend: LLMBackend | None = None,
+    max_candidates_per_call: int | None = None,
 ) -> list[dict]:
     """후보를 분류하고 원본 후보 필드에 계층 분류 결과를 병합해 반환 (run_pipeline.py에서도 재사용).
 
@@ -213,18 +214,26 @@ def classify_and_merge(
 
     "OO 귀하" 같은 수신자 살루테이션은 어떤 문서에서도 섹션 제목이 될 수 없는데, 후보가 많은
     대형 문서(후보 92개짜리 샘플 문서)에서 LLM이 같은 텍스트를 4곳 중 1곳만
-    attachment_section으로 잘못 분류하는 간헐적 오류를 실제로 확인함 — 결정론적으로 강제 보정."""
+    attachment_section으로 잘못 분류하는 간헐적 오류를 실제로 확인함 — 결정론적으로 강제 보정.
+
+    `max_candidates_per_call`을 안 주면(기본값) `_MAX_CANDIDATES_PER_CALL`(Ollama VRAM 기준으로
+    튜닝된 값)을 그대로 쓴다. Groq 같은 클라우드 백엔드는 TPM 한도가 그보다 훨씬 낮을 수 있어
+    호출부(`run_pipeline.py`의 `--max-candidates-per-call`)에서 이 값을 낮춰 오버라이드할 수 있게
+    열어둔다."""
     if backend is None:
         if model is None:
             raise ValueError("backend를 안 주면 model이 필요합니다 (OllamaBackend 생성용)")
         backend = OllamaBackend(model, host)
 
-    is_top_level = len(candidates) <= _MAX_CANDIDATES_PER_CALL
+    limit = max_candidates_per_call or _MAX_CANDIDATES_PER_CALL
+    is_top_level = len(candidates) <= limit
 
     if not is_top_level:
         merged: list[dict] = []
-        for i in range(0, len(candidates), _MAX_CANDIDATES_PER_CALL):
-            merged.extend(classify_and_merge(candidates[i : i + _MAX_CANDIDATES_PER_CALL], backend=backend))
+        for i in range(0, len(candidates), limit):
+            merged.extend(
+                classify_and_merge(candidates[i : i + limit], backend=backend, max_candidates_per_call=limit)
+            )
         return _cap_bracket_marker_scopes(_fill_main_section_number_gaps(merged))
 
     classifications = classify(candidates, backend)
