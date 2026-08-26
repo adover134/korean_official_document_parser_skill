@@ -85,7 +85,7 @@ LLM 분류만으로는 반복되는 패턴을 놓쳤다. 예를 들어:
 
 ## 요구사항 및 사용법
 
-`SKILL.md` 참고.
+[SKILL.md](https://github.com/adover134/korean_official_document_parser_skill/blob/main/SKILL.md) 참고.
 
 ## 라이선스
 
