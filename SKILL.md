@@ -73,6 +73,16 @@ Claude가 이 스킬을 트리거하는 경우, 사용자가 지정한 `.hwp`/`.
 그대로 전달하고, 결과 Markdown 경로를 사용자에게 보고한다. `--backend ollama`(기본)인데 Ollama가
 꺼져 있거나 대상 모델이 없으면 `ollama serve` 및 `ollama pull <model>` 안내를 먼저 제공한다.
 
+## 개발/테스트
+
+`normalize_html_tables.py`처럼 LLM 호출 없이 결정론적으로 동작하는 순수 변환 로직은
+회귀 테스트로 고정돼 있다(스킬 실행 자체엔 불필요, 개발 시에만):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/
+```
+
 ## 한계
 
 - 8GB급 VRAM 환경에서는 문서당 후보가 많을 경우(체크리스트/표가 많은 문서) 자동으로 70개 단위로
