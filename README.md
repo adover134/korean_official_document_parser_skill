@@ -21,28 +21,21 @@ HWP→Markdown 변환 라이브러리(예: [`kordoc`](https://www.npmjs.com/pack
 
 이 프로젝트의 핵심 설계 원칙은 하나다 — **LLM은 판단만 하고, 문서를 다시 쓰지 않는다.**
 
+```mermaid
+flowchart TD
+    A["HWP/HWPX 파일"] -->|"kordoc --format json"| B["Stage1\nJSON blocks로 Markdown 초안 조립\n1×1 텍스트박스는 마커로 경계 보존(라이브러리만, LLM 호출 없음)"]
+    B -->|"평문 텍스트"| C["Pass1a\n규칙 기반 헤더 후보 추출\n볼드 단독 줄 · 번호 매김 · 괄호 마커(recall 우선, 오탐은 허용)"]
+    C -->|"후보 목록만 전달(원문 아님)"| D["Pass1b\nLLM이 후보별 계층 판단\nmain / sub / attachment / not_heading"]
+    D -->|"제공자 API가 토큰 한도 초과를 알려줌"| E["실측 Limit/Requested 비율로\n배치를 자동 축소"]
+    E -.->|"축소된 배치로 재호출"| D
+    D -->|"분류 결과"| F["결정론적 안전망\n박스·서식 스코프 내부는 하위로 강등\n서명란(~귀하 · ~(인))은 헤더에서 제외"]
+    F -->|"확정된 헤더 위치"| G["Pass2\n헤더 마크(##/###)만 삽입\n본문은 한 글자도 재작성하지 않음"]
+    G --> H["최종 Markdown"]
 ```
-HWP/HWPX
-   │
-   ▼
-[Stage1] kordoc --format json → Markdown 초안 조립          (라이브러리, LLM 없음)
-   │        1×1 텍스트박스는 <!--box-start/end--> 마커로 경계 보존
-   ▼
-[Pass1a] 헤더일 수 있는 줄 후보 추출                          (규칙 기반, recall 우선)
-   │        볼드 단독 줄 / 번호 매김 줄 / 괄호 마커(【】·[]·〈〉 등) / kordoc 네이티브 헤딩
-   ▼
-[Pass1b] 후보 목록을 LLM에 통째로 전달                        (LLM, 판단만)
-   │        기본: 로컬 Ollama / --backend로 OpenAI 호환 API(OpenAI·Groq·Gemini)도 가능
-   │        main_section / sub_section / attachment_section / not_heading 중 하나로 분류
-   ▼
-[안전망] 결정론적 후처리                                       (LLM 아님, 규칙)
-   │        박스/서식 스코프 내부 → 하위로 강등, "~귀하"/"~(인)" 서명란 → 헤더 아님
-   ▼
-[Pass2] 판단 결과를 Stage1 초안에 헤더 마크만 삽입              (문자열 조작, LLM 없음)
-   │
-   ▼
-최종 Markdown (헤더 계층 보존, 본문 원문 그대로)
-```
+
+판단과 변환을 분리한다 — 후보를 뽑는 규칙(Pass1a)과 문장을 다시 쓰는 일(Pass2)엔 LLM을 안 쓴다.
+LLM은 오직 "이 줄이 헤더인가"라는 좁은 판단(Pass1b)에만 쓰여서, 문단 누락이나 헤더 날조 같은
+위험이 설계적으로 배제된다.
 
 후보 목록만 LLM에 넘기기 때문에 문서가 길어져도 LLM 호출 비용이 거의 늘지 않고, LLM이 "판단"만
 하고 "생성"은 하지 않으므로 문단 누락·헤더 날조 같은 위험이 설계적으로 배제된다.
