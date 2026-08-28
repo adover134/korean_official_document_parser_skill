@@ -21,6 +21,7 @@ Ollama와 OpenAI 호환 API의 실제 차이:
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -31,6 +32,85 @@ class LLMBackend:
 
     def chat_json(self, system_prompt: str, user_prompt: str, *, max_tokens: int, seed: int | None = 42) -> dict:
         raise NotImplementedError
+
+
+class RateLimitExceeded(RuntimeError):
+    """제공자(OpenAI 호환 API)가 실제로 돌려준 TPM(분당 토큰) 한도 초과 응답 — 일반 `RuntimeError`와
+    구분해서, 호출부(`classify_and_merge()`)가 이 정보를 보고 배치 크기를 자동으로 줄여 재시도할 수
+    있게 한다(2026-08-27, "실제 연결한 모델의 API"가 알려주는 실측 한도로 자동 조절 — 제공자별로
+    미리 값을 추측/하드코딩하는 대신, 매 실패에서 그 제공자가 직접 알려주는 정확한 수치를 그대로 쓴다).
+
+    `is_size_limit=True`면 이 요청 자체가 한 번에 한도를 넘은 것(배치를 줄여 즉시 재시도하면 됨)
+    — `False`면 최근 누적 사용량으로 분당 한도 자체가 소진된 것(배치를 줄여도 소용없고
+    `retry_after`만큼 기다려야 함). HTTP 상태 코드(413/429)가 아니라 응답에서 파싱한 실제
+    limit/requested 수치로 판단한다 — 제공자마다 상태 코드 관례가 다르다(`_parse_rate_limit_error()`
+    docstring 참고: Groq는 413/429로 나누지만 OpenAI는 같은 상황도 전부 429로 보낸다)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        is_size_limit: bool,
+        limit_tokens: int | None = None,
+        requested_tokens: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.is_size_limit = is_size_limit
+        self.limit_tokens = limit_tokens
+        self.requested_tokens = requested_tokens
+        self.retry_after = retry_after
+
+
+_LIMIT_RE = re.compile(r"[Ll]imit[:\s]+(\d+)")
+_REQUESTED_RE = re.compile(r"[Rr]equested[:\s]+(\d+)")
+
+
+def _parse_rate_limit_error(code: int, body_text: str, headers) -> "RateLimitExceeded | None":
+    """HTTPError 본문/헤더가 실제로 (TPM) 토큰 한도 초과인지 판별해서 `RateLimitExceeded`로
+    구조화한다 — 아니면 None(호출부가 기존처럼 일반 `RuntimeError`로 처리).
+
+    Groq 실측(2026-08-27) 기준 본문 형태: `{"error": {"code": "rate_limit_exceeded", "message":
+    "... Limit 8000, Requested 14483 ..."}}`, HTTP 413. 메시지의 "Limit N"/"Requested N"이 있으면
+    그 값으로 정확한 축소 비율을 계산하고, 없으면(다른 제공자가 문구를 다르게 쓰는 경우) 폴백으로
+    절반씩 줄이게 `limit_tokens`/`requested_tokens`를 None으로 둔다.
+
+    `is_size_limit`(배치를 줄여야 하는지, 아니면 시간만 기다리면 되는지)은 HTTP 상태 코드가 아니라
+    파싱한 실제 수치로 판단한다 — Groq는 "요청 자체가 너무 큼"을 413으로 구분해 보내지만, OpenAI는
+    같은 상황도 429로 보낸다(웹 검색 확인, 2026-08-27: "Request too large for gpt-4.1... on tokens
+    per min (TPM): Limit 30000, Requested 42638"도 429). 상태 코드로 나누면 OpenAI에서는 이
+    경우를 "그냥 기다리면 되는 문제"로 오판해 배치를 안 줄이고 똑같은 크기로 계속 재시도하다
+    실패한다 — `requested_tokens > limit_tokens`를 직접 확인하는 쪽이 제공자 무관하게 안전하다.
+    두 수치를 못 읽으면(다른 제공자가 문구를 또 다르게 쓰는 경우) 축소를 기본값으로 삼는다 —
+    실제로는 시간창 문제였을 뿐이면 API 호출이 몇 번 더 느는 정도지만, 반대로 오판하면(진짜
+    크기 문제인데 안 줄이면) 재시도 상한까지 같은 실패를 반복하게 되므로 축소 쪽이 더 안전한
+    기본값이다."""
+    if code not in (413, 429):
+        return None
+    try:
+        err = json.loads(body_text).get("error", {})
+    except (json.JSONDecodeError, AttributeError):
+        err = {}
+    msg = str(err.get("message", ""))
+    err_code = str(err.get("code", ""))
+    has_rate_limit_headers = any(h.lower().startswith("x-ratelimit-") for h in headers.keys())
+    if err_code != "rate_limit_exceeded" and not has_rate_limit_headers:
+        return None  # 토큰 한도 초과가 아닌 다른 413/429(예: 요청 자체가 유효하지 않음)
+
+    limit_m = _LIMIT_RE.search(msg)
+    req_m = _REQUESTED_RE.search(msg)
+    limit_tokens = int(limit_m.group(1)) if limit_m else None
+    requested_tokens = int(req_m.group(1)) if req_m else None
+    is_size_limit = requested_tokens > limit_tokens if (limit_tokens and requested_tokens) else True
+
+    retry_after_raw = headers.get("retry-after")
+    return RateLimitExceeded(
+        f"토큰 한도 초과 ({code}): {msg or body_text[:300]}",
+        is_size_limit=is_size_limit,
+        limit_tokens=limit_tokens,
+        requested_tokens=requested_tokens,
+        retry_after=float(retry_after_raw) if retry_after_raw else None,
+    )
 
 
 class OllamaBackend(LLMBackend):
@@ -115,6 +195,9 @@ class OpenAICompatBackend(LLMBackend):
                 body = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
+            rate_limit_error = _parse_rate_limit_error(e.code, detail, e.headers)
+            if rate_limit_error is not None:
+                raise rate_limit_error from e
             raise RuntimeError(f"{self.base_url} 호출 실패 ({e.code}): {detail[:500]}") from e
         dt = time.time() - t0
 

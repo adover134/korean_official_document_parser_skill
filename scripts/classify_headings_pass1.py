@@ -20,9 +20,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 
 from extract_heading_candidates import _match_bracket_marker
-from llm_backend import LLMBackend, OllamaBackend
+from llm_backend import LLMBackend, OllamaBackend, RateLimitExceeded
 
 SYSTEM_PROMPT = """당신은 한국 공공기관 입찰공고문(RFP)의 구조를 분석하는 전문가입니다.
 
@@ -102,6 +103,9 @@ def _line_key(v) -> int | None:
 # (92개보다 확실히 작게) 청크로 나눠 호출을 여러 번 하는 쪽으로 우회한다.
 _MAX_CANDIDATES_PER_CALL = 70
 
+# RateLimitExceeded(429, 즉 배치 크기와 무관하게 분당 누적 한도 자체가 소진된 경우)를 같은
+# 크기로 재시도할 때의 상한 — 무한 대기/재시도를 막는 안전판(2026-08-27).
+_MAX_RATE_LIMIT_RETRIES = 5
 
 _NUMBER_PREFIX_RE = re.compile(r"^(\d+)[.,]")
 
@@ -204,6 +208,7 @@ def classify_and_merge(
     host: str = "http://localhost:11434",
     backend: LLMBackend | None = None,
     max_candidates_per_call: int | None = None,
+    _rate_limit_retries: int = 0,
 ) -> list[dict]:
     """후보를 분류하고 원본 후보 필드에 계층 분류 결과를 병합해 반환 (run_pipeline.py에서도 재사용).
 
@@ -218,8 +223,11 @@ def classify_and_merge(
 
     `max_candidates_per_call`을 안 주면(기본값) `_MAX_CANDIDATES_PER_CALL`(Ollama VRAM 기준으로
     튜닝된 값)을 그대로 쓴다. Groq 같은 클라우드 백엔드는 TPM 한도가 그보다 훨씬 낮을 수 있어
-    호출부(`run_pipeline.py`의 `--max-candidates-per-call`)에서 이 값을 낮춰 오버라이드할 수 있게
-    열어둔다."""
+    호출부(`run_pipeline.py`의 `--max-candidates-per-call`)에서 이 값을 명시적으로 낮출 수 있다 —
+    다만 이제는 그 값이 "시작 크기"일 뿐, 실제로 그 제공자의 API가 토큰 한도 초과를 알려오면
+    (2026-08-27 추가) 아래에서 자동으로 배치를 줄여 재시도한다. 제공자마다 한도를 미리 추측해
+    하드코딩하는 대신, 매번 그 제공자가 실제로 응답에 실어 보내는 정확한 수치
+    (`RateLimitExceeded.limit_tokens`/`.requested_tokens`, `llm_backend.py` 참고)를 그대로 쓴다."""
     if backend is None:
         if model is None:
             raise ValueError("backend를 안 주면 model이 필요합니다 (OllamaBackend 생성용)")
@@ -236,7 +244,34 @@ def classify_and_merge(
             )
         return _cap_bracket_marker_scopes(_fill_main_section_number_gaps(merged))
 
-    classifications = classify(candidates, backend)
+    try:
+        classifications = classify(candidates, backend)
+    except RateLimitExceeded as e:
+        if _rate_limit_retries >= _MAX_RATE_LIMIT_RETRIES:
+            raise
+        if e.retry_after:
+            print(f"      토큰 한도 초과 — {e.retry_after:.0f}초 대기 후 재시도")
+            time.sleep(e.retry_after)
+
+        if e.is_size_limit and len(candidates) > 1:
+            # HTTP 413류: 이 요청 자체가 한 번에 너무 컸다 — 제공자가 알려준 정확한
+            # limit/requested 비율로 배치를 줄인다(안전 마진 15%). 그 정보가 없으면(다른
+            # 제공자가 문구를 다르게 쓰는 경우) 절반으로 폴백.
+            if e.limit_tokens and e.requested_tokens:
+                shrink_ratio = (e.limit_tokens / e.requested_tokens) * 0.85
+                new_limit = max(1, min(len(candidates) - 1, int(len(candidates) * shrink_ratio)))
+            else:
+                new_limit = max(1, len(candidates) // 2)
+            print(f"      토큰 한도 초과 — 배치 크기 {len(candidates)} -> {new_limit}로 자동 축소 후 재시도")
+            return classify_and_merge(
+                candidates, backend=backend, max_candidates_per_call=new_limit,
+            )
+
+        # HTTP 429류(누적 한도 소진, 배치를 줄여도 무의미) 또는 이미 후보 1개까지 줄인 상태 —
+        # 대기 후 같은 크기로 재시도(위 재시도 상한이 무한 루프를 막음).
+        return classify_and_merge(
+            candidates, backend=backend, max_candidates_per_call=limit, _rate_limit_retries=_rate_limit_retries + 1,
+        )
     by_line = {_line_key(c.get("line")): c for c in classifications}
     merged = []
     for cand in candidates:
