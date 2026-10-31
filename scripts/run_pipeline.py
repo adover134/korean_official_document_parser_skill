@@ -30,7 +30,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
 
 사용법:
     python run_pipeline.py <input.hwp|hwpx|pdf> [--pipeline-root pipeline]
-        [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.9.0]
+        [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.24.29]
         [--title TITLE] [-o OUTPUT] [--skip-existing-stage1]
         [--backend ollama|openai|groq|gemini] [--api-key KEY] [--base-url URL]
         [--max-candidates-per-call N]
@@ -183,7 +183,7 @@ def main() -> None:
             "Groq 등 TPM 한도가 낮은 클라우드 백엔드로 --backend를 바꿨을 때 이 값을 낮춰야 할 수 있음"
         ),
     )
-    ap.add_argument("--kordoc-version", default="4.9.0")
+    ap.add_argument("--kordoc-version", default="4.24.29")
     ap.add_argument("--title", help="문서 제목 (미지정 시 파일명에서 유도)")
     ap.add_argument("-o", "--output", help="최종 결과 저장 경로 (미지정 시 pipeline-root/03-.../<파일명>.md)")
     ap.add_argument(

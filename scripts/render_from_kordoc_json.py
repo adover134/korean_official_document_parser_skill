@@ -20,7 +20,7 @@ table.rows==1, table.cols==1`로 명확히 구분된다. 이 스크립트는 kor
     (`normalize_html_tables.rows_to_pipe()` 재사용 — rowspan 복제/colspan 비복제/경계행 분리 로직 동일)
 
 사용법:
-    python render_from_kordoc_json.py <input.hwp|hwpx> [-o <output.md>] [--kordoc-version 4.9.0]
+    python render_from_kordoc_json.py <input.hwp|hwpx> [-o <output.md>] [--kordoc-version 4.24.29]
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _strip_pua(text: str) -> str:
     return _PUA_RE.sub("", text)
 
 
-def run_kordoc_json(input_path: str, kordoc_version: str = "4.9.0") -> dict:
+def run_kordoc_json(input_path: str, kordoc_version: str = "4.24.29") -> dict:
     """kordoc을 JSON 출력 모드로 실행해서 파싱된 결과를 반환."""
     result = subprocess.run(
         ["npx", f"kordoc@{kordoc_version}", input_path, "--format", "json", "--silent"],
@@ -109,7 +109,7 @@ def render_blocks(blocks: list[dict]) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def render(input_path: str, kordoc_version: str = "4.9.0") -> str:
+def render(input_path: str, kordoc_version: str = "4.24.29") -> str:
     data = run_kordoc_json(input_path, kordoc_version)
     md = render_blocks(data["blocks"])
     md = _strip_pua(md)
@@ -124,7 +124,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input")
     ap.add_argument("-o", "--output")
-    ap.add_argument("--kordoc-version", default="4.9.0")
+    ap.add_argument("--kordoc-version", default="4.24.29")
     args = ap.parse_args()
 
     md = render(args.input, args.kordoc_version)
