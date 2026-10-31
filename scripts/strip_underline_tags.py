@@ -1,4 +1,5 @@
 """kordoc이 원본 HWP의 밑줄 서식을 그대로 옮긴 `<u>`/`</u>` 태그를 markdown 원문에서 제거한다.
+(kordoc 4.17+가 한글 문구 전체를 감싼 서식용 `<sup>`/`<sub>`도 함께 제거한다 — 아래 `strip_underline_tags` 참고.)
 
 배경: `<u>`는 순수한 서식 정보(강조 표시)일 뿐인데, 이 태그가 헤더 후보 줄의 맨 앞/뒤를 감싸거나
 문장 중간에 끼어드는 바람에 여러 문제를 일으켰다(2026-08-21 확인):
@@ -20,6 +21,16 @@ import argparse
 import re
 
 _UNDERLINE_TAG_RE = re.compile(r"</?u>")
+# kordoc은 위·아래첨자 서식을 `<sup>`/`<sub>`로 낸다. 실제 첨자(`m<sup>2</sup>`, `10<sup>4</sup>`, `H<sub>2</sub>O`)는
+# 숫자·영문·기호뿐이라 뜻이 있어 두고, 그 밖의 것 — 한글 문구 전체(`<sup>(수급인)</sup>`, 상자 문장 전체를 감싼 `<sub>`)나
+# 원문자 번호(`<sub>①</sub>`) 같은 서식 잔재 — 는 태그만 벗긴다. 42개 입찰공고에서 발견된 20건은 전부 서식 잔재였다.
+_SCRIPT_TAG_RE = re.compile(r"<(sup|sub)>([^<]*)</\1>")
+_REAL_SCRIPT_RE = re.compile(r"^[A-Za-z0-9+\-\u2212=(),.\s]+$")
+
+
+def _unwrap_script_tag(m: re.Match) -> str:
+    inner = m.group(2)
+    return m.group(0) if _REAL_SCRIPT_RE.match(inner) else inner
 
 
 def find_issues(text: str) -> list[dict]:
@@ -34,7 +45,8 @@ def find_issues(text: str) -> list[dict]:
 
 
 def strip_underline_tags(text: str) -> str:
-    return _UNDERLINE_TAG_RE.sub("", text)
+    text = _UNDERLINE_TAG_RE.sub("", text)
+    return _SCRIPT_TAG_RE.sub(_unwrap_script_tag, text)
 
 
 def main() -> None:
