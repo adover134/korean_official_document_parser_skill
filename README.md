@@ -8,6 +8,13 @@ Markdown으로 변환하는 [Claude Code Skill](https://docs.claude.com/)이다.
 > 결정론적 안전망 규칙 등)은 실제 실패 사례를 근거로 세션 중 반복적으로 검증·수정한 것이다 — 그
 > 과정은 [`docs/DESIGN_PROCESS.md`](docs/DESIGN_PROCESS.md)에 정리했다.
 
+## 전제
+
+이 도구는 **[나라장터](https://www.g2b.go.kr/)에서 가져온 공고문**을 입력으로 가정한다.
+
+- 다른 출처의 문서(양식과 첨부 구성이 다른 것)는 검증하지 않았다.
+- 공고 목록(엑셀)처럼 문서 밖의 정보를 만드는 일도 이 파서가 맡아야 한다. 지금은 RAG 쪽(hierarchical-md-rag)에서 하고 있고, 앞으로 이쪽으로 옮길 예정이다.
+
 ## 문제
 
 HWP→Markdown 변환 라이브러리(예: [`kordoc`](https://www.npmjs.com/package/kordoc))는 표·서식·
