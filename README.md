@@ -13,7 +13,8 @@ Markdown으로 변환하는 [Claude Code Skill](https://docs.claude.com/)이다.
 이 도구는 **[나라장터](https://www.g2b.go.kr/)에서 가져온 공고문**을 입력으로 가정한다.
 
 - 다른 출처의 문서(양식과 첨부 구성이 다른 것)는 검증하지 않았다.
-- 공고 목록(엑셀)처럼 문서 밖의 정보를 만드는 일도 이 파서가 맡아야 한다. 지금은 RAG 쪽(hierarchical-md-rag)에서 하고 있고, 앞으로 이쪽으로 옮길 예정이다.
+- 공고 목록(엑셀)과 거기서 만드는 메타데이터는 이 파서의 일이 아니다. 이 파서는 문서를 Markdown으로 바꾸는 일만 한다.
+- 메타데이터는 RAG 쪽 [hierarchical-md-rag](https://github.com/adover134/hierarchical-md-rag)의 메타데이터 단계가 엑셀에서 만든다.
 
 ## 문제
 
