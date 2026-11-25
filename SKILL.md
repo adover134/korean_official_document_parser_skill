@@ -65,7 +65,7 @@ python scripts/run_pipeline.py <입력.hwp|hwpx> [옵션]
   `GEMINI_API_KEY` 환경변수, 또는 cwd의 `.env`)
 - `--base-url URL` — OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)
 - `--max-candidates-per-call N` — 계층 추출 LLM 호출 하나당 넘길 헤더 후보 최대 개수 (기본: Ollama
-  VRAM 기준 70). Groq 등 TPM 한도가 낮은 백엔드는 이 값을 낮춰야 할 수 있음 — 아래 "한계" 참고
+  gpt-oss:20b를 8GB VRAM에서 돌릴 때 기준 30). Groq 등 TPM 한도가 낮은 백엔드는 이 값을 낮춰야 할 수 있음 — 아래 "한계" 참고
 - `-o, --output PATH` — 최종 Markdown 저장 경로
 - `--skip-existing-stage1` — 이미 Stage1 결과가 있으면 kordoc 재실행 없이 재사용
 

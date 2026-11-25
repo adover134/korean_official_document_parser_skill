@@ -101,7 +101,10 @@ def _line_key(v) -> int | None:
 # 문서 2건 — 둘 다 prompt_eval이 정확히 4098로 일치, VRAM 기본 컨텍스트에
 # 눌린 증거). num_ctx를 더 키우는 방향으로는 VRAM 상한을 못 피하므로, 후보 목록 자체를 여유 있게
 # (92개보다 확실히 작게) 청크로 나눠 호출을 여러 번 하는 쪽으로 우회한다.
-_MAX_CANDIDATES_PER_CALL = 70
+# gpt-oss:20b(기본 모델)를 8GB VRAM 노트북 GPU(RTX 4060)에서 돌리면 후보가 많은 문서의 한 호출이
+# 호출 제한 시간(300초)을 넘어 실패했다(70개 기준, 42건 중 5건 실측, hierarchical-md-rag EXPERIMENTS.md).
+# 후보를 30개씩 나눠 호출하면 42건이 모두 성공했다. 그래서 기본값을 30으로 둔다.
+_MAX_CANDIDATES_PER_CALL = 30
 
 # RateLimitExceeded(429, 즉 배치 크기와 무관하게 분당 누적 한도 자체가 소진된 경우)를 같은
 # 크기로 재시도할 때의 상한 — 무한 대기/재시도를 막는 안전판(2026-08-27).
