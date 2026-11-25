@@ -73,7 +73,7 @@ def render_markdown(lines: list[str], classified: list[dict], title: str) -> str
 
     예외 1건: kordoc이 원본 스타일 메타데이터를 잘못 해석해서 서명란·수신인 같은 줄에 자체적으로
     `#` 마크를 붙여놓는 경우가 실제로 있다(한 샘플 문서 — "OO장
-    귀하"에 kordoc이 `##`/`###`를 붙임). Pass1a는 이런 줄도 'heading' 타입 후보로 뽑고 Pass1b가
+    귀하"에 kordoc이 `##`/`###`를 붙임). Pass1a는 이런 줄도 'heading' 타입 후보로 뽑고 계층 추출가
     정확히 not_heading으로 판정하는데, "판정 안 된 건 안 건드린다"는 원칙만 따르면 kordoc이 이미
     붙여둔 `#`가 그대로 통과해버린다 — 이건 "우리가 새로 헤더를 만드는" 게 아니라 "Pass1이 이미
     헤더가 아니라고 판정한 걸 원문(kordoc)의 실수까지 그대로 살려주는" 경우라 예외적으로 되돌린다."""

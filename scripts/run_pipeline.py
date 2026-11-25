@@ -35,7 +35,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
         [--backend ollama|openai|groq|gemini] [--api-key KEY] [--base-url URL]
         [--max-candidates-per-call N]
 
-Pass1b(헤더 계층 판단) LLM 호출은 기본이 로컬 Ollama지만, --backend로 OpenAI 호환 API(OpenAI/
+계층 추출(헤더 판단) LLM 호출은 기본이 로컬 Ollama지만, --backend로 OpenAI 호환 API(OpenAI/
 Groq/Gemini)로 바꿀 수 있다(자세한 배경은 llm_backend.py 참고) — GPU 없는 환경에서도 쓸 수 있게
 하는 확장점.
 """
@@ -172,7 +172,7 @@ def main() -> None:
     ap.add_argument("--host", default="http://localhost:11434", help="--backend ollama일 때만 사용")
     ap.add_argument(
         "--backend", choices=["ollama", "openai", "groq", "gemini"], default="ollama",
-        help="Pass1b(헤더 계층 판단) LLM 호출 방식. ollama(기본, 로컬) 외에는 --api-key 필요",
+        help="계층 추출(헤더 판단) LLM 호출 방식. ollama(기본, 로컬) 외에는 --api-key 필요",
     )
     ap.add_argument("--api-key", help="--backend가 ollama가 아닐 때 필요한 API 키 (또는 OPENAI_API_KEY/GROQ_API_KEY/GEMINI_API_KEY 환경변수)")
     ap.add_argument("--base-url", help="OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)")

@@ -1,4 +1,4 @@
-"""Pass1b(헤더 후보 계층 판단)가 호출하는 LLM을 백엔드 추상화 뒤로 감싼다.
+"""계층 추출(헤더 후보 판단)가 호출하는 LLM을 백엔드 추상화 뒤로 감싼다.
 
 배경: 원래 `classify_headings_pass1.py`의 `classify()`가 Ollama의 `/api/chat` 스키마(응답이
 `{"message": {"content": ...}}`, Ollama 전용 `options.num_ctx`/`think` 필드 등)에 직접 강결합돼

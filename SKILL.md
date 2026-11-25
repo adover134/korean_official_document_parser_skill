@@ -26,7 +26,7 @@ description: Converts hierarchical Korean official documents in HWP/HWPX format 
    정보를 잃지 않게 한다.
 2. **Pass1a (규칙 기반, recall만)** — 헤더일 수 있는 줄(볼드 단독 줄, 번호 매김 줄, 괄호로 감싼
    선두 라벨 등)을 폭넓게 후보로 추출한다. 오탐은 허용하고 놓치지 않는 것을 우선한다.
-3. **Pass1b (로컬 LLM, 판단만)** — 후보 목록 전체를 로컬 Ollama 모델에 한 번에 보여주고, 각
+3. **계층 추출 (로컬 LLM, 판단만)** — 후보 목록 전체를 로컬 Ollama 모델에 한 번에 보여주고, 각
    후보가 진짜 헤더인지·어느 계층인지(`main_section`/`sub_section`/`attachment_section`/
    `not_heading`)만 판단하게 한다. 본문을 다시 쓰게 하지 않는다.
 4. **결정론적 안전망** — LLM이 반복적으로 놓치는 패턴(텍스트박스 안 콘텐츠, 서식/붙임 스코프 내부
@@ -42,7 +42,7 @@ LLM 호출은 오직 "이 후보가 헤더인가?"라는 좁은 판단에만 쓰
 ## 요구사항
 
 - Node.js (`npx`로 `kordoc`을 실행 — 별도 설치 불필요, 최초 실행 시 자동 다운로드)
-- Pass1b(헤더 계층 판단) LLM 호출 — 아래 둘 중 하나:
+- 계층 추출(헤더 판단) LLM 호출 — 아래 둘 중 하나:
   - 로컬에서 실행 중인 [Ollama](https://ollama.com) 서버 + 풀받은 모델(기본값 `gpt-oss:20b`,
     `--model`로 변경 가능) — 기본값, GPU 필요
   - OpenAI 호환 클라우드 API(OpenAI/Groq/Gemini) — `--backend`로 선택, API 키 필요. GPU 없이도
@@ -60,11 +60,11 @@ python scripts/run_pipeline.py <입력.hwp|hwpx> [옵션]
 - `--pipeline-root DIR` — Stage1/Pass1/Pass2 중간 산출물 저장 위치 (기본: `pipeline/`)
 - `--model NAME` — Ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명 (기본: `gpt-oss:20b`)
 - `--host URL` — Ollama 서버 주소 (기본: `http://localhost:11434`, `--backend ollama`일 때만 사용)
-- `--backend {ollama,openai,groq,gemini}` — Pass1b LLM 호출 방식 (기본: `ollama`)
+- `--backend {ollama,openai,groq,gemini}` — 계층 추출 LLM 호출 방식 (기본: `ollama`)
 - `--api-key KEY` — `--backend`가 ollama가 아닐 때 필요 (또는 `OPENAI_API_KEY`/`GROQ_API_KEY`/
   `GEMINI_API_KEY` 환경변수, 또는 cwd의 `.env`)
 - `--base-url URL` — OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음)
-- `--max-candidates-per-call N` — Pass1b LLM 호출 하나당 넘길 헤더 후보 최대 개수 (기본: Ollama
+- `--max-candidates-per-call N` — 계층 추출 LLM 호출 하나당 넘길 헤더 후보 최대 개수 (기본: Ollama
   VRAM 기준 70). Groq 등 TPM 한도가 낮은 백엔드는 이 값을 낮춰야 할 수 있음 — 아래 "한계" 참고
 - `-o, --output PATH` — 최종 Markdown 저장 경로
 - `--skip-existing-stage1` — 이미 Stage1 결과가 있으면 kordoc 재실행 없이 재사용
