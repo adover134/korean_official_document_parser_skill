@@ -43,7 +43,7 @@ LLM 호출은 오직 "이 후보가 헤더인가?"라는 좁은 판단에만 쓰
 
 - Node.js (`npx`로 `kordoc`을 실행 — 별도 설치 불필요, 최초 실행 시 자동 다운로드)
 - Pass1b(헤더 계층 판단) LLM 호출 — 아래 둘 중 하나:
-  - 로컬에서 실행 중인 [Ollama](https://ollama.com) 서버 + 풀받은 모델(기본값 `qwen3.5:9b`,
+  - 로컬에서 실행 중인 [Ollama](https://ollama.com) 서버 + 풀받은 모델(기본값 `gpt-oss:20b`,
     `--model`로 변경 가능) — 기본값, GPU 필요
   - OpenAI 호환 클라우드 API(OpenAI/Groq/Gemini) — `--backend`로 선택, API 키 필요. GPU 없이도
     쓸 수 있고, Groq는 무료 티어로도 동작 확인함(`scripts/llm_backend.py` 참고)
@@ -58,7 +58,7 @@ python scripts/run_pipeline.py <입력.hwp|hwpx> [옵션]
 
 주요 옵션:
 - `--pipeline-root DIR` — Stage1/Pass1/Pass2 중간 산출물 저장 위치 (기본: `pipeline/`)
-- `--model NAME` — Ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명 (기본: `qwen3.5:9b`)
+- `--model NAME` — Ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명 (기본: `gpt-oss:20b`)
 - `--host URL` — Ollama 서버 주소 (기본: `http://localhost:11434`, `--backend ollama`일 때만 사용)
 - `--backend {ollama,openai,groq,gemini}` — Pass1b LLM 호출 방식 (기본: `ollama`)
 - `--api-key KEY` — `--backend`가 ollama가 아닐 때 필요 (또는 `OPENAI_API_KEY`/`GROQ_API_KEY`/

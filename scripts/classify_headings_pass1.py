@@ -12,7 +12,7 @@ extract_heading_candidates.py가 뽑은 후보 목록(JSON)을 통째로 LLM에 
 문서가 아무리 길어도 이 호출의 비용은 거의 안 늘어난다 — 이게 2-패스 설계의 핵심 이점.
 
 사용법:
-    python classify_headings_pass1.py <candidates.json> [-o <output.json>] [--model qwen3.5:9b]
+    python classify_headings_pass1.py <candidates.json> [-o <output.json>] [--model gpt-oss:20b]
 """
 
 from __future__ import annotations
@@ -310,7 +310,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", help="extract_heading_candidates.py가 만든 candidates.json")
     ap.add_argument("-o", "--output", help="분류 결과 JSON 저장 경로")
-    ap.add_argument("--model", default="qwen3.5:9b")
+    ap.add_argument("--model", default="gpt-oss:20b")
     args = ap.parse_args()
 
     with open(args.input, encoding="utf-8") as f:

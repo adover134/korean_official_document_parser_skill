@@ -30,7 +30,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
 
 사용법:
     python run_pipeline.py <input.hwp|hwpx|pdf> [--pipeline-root pipeline]
-        [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.24.29]
+        [--model gpt-oss:20b] [--host http://localhost:11434] [--kordoc-version 4.24.29]
         [--title TITLE] [-o OUTPUT] [--skip-existing-stage1]
         [--backend ollama|openai|groq|gemini] [--api-key KEY] [--base-url URL]
         [--max-candidates-per-call N]
@@ -168,7 +168,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", help="입력 HWP/HWPX/PDF 파일 경로")
     ap.add_argument("--pipeline-root", default="pipeline", help="Stage1/Pass1/Pass2 출력 루트 (기본: pipeline/)")
-    ap.add_argument("--model", default="qwen3.5:9b", help="ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명")
+    ap.add_argument("--model", default="gpt-oss:20b", help="ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명")
     ap.add_argument("--host", default="http://localhost:11434", help="--backend ollama일 때만 사용")
     ap.add_argument(
         "--backend", choices=["ollama", "openai", "groq", "gemini"], default="ollama",
